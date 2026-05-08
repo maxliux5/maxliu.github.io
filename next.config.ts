@@ -5,8 +5,8 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
-  basePath: "/maxliu.github.io",
-  assetPrefix: "/maxliu.github.io",
+  basePath: "",
+  assetPrefix: "",
 };
 
 export default nextConfig;
