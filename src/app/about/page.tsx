@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Github, Mail, Music, Code, Camera } from "lucide-react";
+import { Mail, Music, Code, Camera, Globe } from "lucide-react";
 
 const skills = [
   { icon: Code, label: "Frontend", items: ["React", "Next.js", "TypeScript", "Tailwind"] },
@@ -62,7 +62,7 @@ export default function AboutPage() {
               whileHover={{ scale: 1.1, y: -2 }}
               whileTap={{ scale: 0.9 }}
             >
-              <Github size={24} />
+              <Globe size={24} />
             </motion.a>
             <motion.a
               href="#"

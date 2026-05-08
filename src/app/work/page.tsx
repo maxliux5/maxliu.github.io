@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ExternalLink, Github } from "lucide-react";
+import { ExternalLink, Globe } from "lucide-react";
 
 const projects = [
   {
@@ -50,14 +50,7 @@ const containerVariants = {
 
 const itemVariants = {
   hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.6,
-      ease: [0.22, 1, 0.36, 1],
-    },
-  },
+  visible: { opacity: 1, y: 0 },
 };
 
 export default function WorkPage() {
@@ -117,7 +110,7 @@ export default function WorkPage() {
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}
                     >
-                      <Github size={20} />
+                      <Globe size={20} />
                     </motion.a>
                     <motion.a
                       href={project.link}

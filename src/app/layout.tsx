@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import ParticleBackground from "@/components/ParticleBackground";
 import Navigation from "@/components/Navigation";
@@ -7,11 +7,6 @@ import PageTransition from "@/components/PageTransition";
 
 const inter = Inter({
   variable: "--font-inter",
-  subsets: ["latin"],
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains",
   subsets: ["latin"],
 });
 
@@ -34,7 +29,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+    <html lang="en" className={`${inter.variable}`}>
       <body className="min-h-screen bg-[#0a0a0f] text-white antialiased overflow-x-hidden">
         <ParticleBackground />
         <Navigation />
