@@ -21,28 +21,6 @@
   cursor: crosshair;
   --x: 50%;
   --y: 50%;
-  /* Smooth transition: transparent center -> black edge */
-  --reveal-mask: radial-gradient(
-    circle farthest-side at var(--x) var(--y),
-    transparent 0%,
-    transparent 38%,
-    rgba(0, 0, 0, 0.15) 48%,
-    rgba(0, 0, 0, 0.4) 55%,
-    rgba(0, 0, 0, 0.7) 62%,
-    black 70%,
-    black 100%
-  );
-  /* Smooth transition: black center -> transparent edge */
-  --cover-mask: radial-gradient(
-    circle farthest-side at var(--x) var(--y),
-    black 0%,
-    black 38%,
-    rgba(0, 0, 0, 0.7) 45%,
-    rgba(0, 0, 0, 0.3) 52%,
-    rgba(0, 0, 0, 0.1) 62%,
-    transparent 70%,
-    transparent 100%
-  );
 }
 
 .featherViewportInner {
@@ -69,13 +47,11 @@
 
 .featherSharp {
   position: absolute;
-  inset: 0;
+  inset: -3px;
   backface-visibility: hidden;
   z-index: 1;
   filter: brightness(0.95) contrast(1.02) saturate(0.92);
   overflow: hidden;
-  mask-image: var(--reveal-mask);
-  -webkit-mask-image: var(--reveal-mask);
 }
 
 .featherSharp video {
@@ -83,32 +59,22 @@
   height: 100%;
   object-fit: cover;
   display: block;
-  opacity: 0;
-  transition: opacity 0.5s ease;
-}
-
-.featherSharp video.loaded {
-  opacity: 1;
 }
 
 .featherStars {
   position: absolute;
-  inset: 0;
-  z-index: 2;
+  inset: -2px;
+  z-index: 4;
   pointer-events: none;
-  mask-image: var(--reveal-mask);
-  -webkit-mask-image: var(--reveal-mask);
 }
 
 .featherVeil {
   position: absolute;
-  inset: 0;
+  inset: -3px;
   backface-visibility: hidden;
   z-index: 3;
   background: #f3f1ed;
   pointer-events: none;
-  mask-image: var(--cover-mask);
-  -webkit-mask-image: var(--cover-mask);
 }
 
 .galleryCaption {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import styles from "./CrystalGlobe.module.css";
 
 const STAR_COUNT = 80;
@@ -19,7 +19,6 @@ export default function CrystalGlobe() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mouseRef = useRef({ x: 50, y: 50 });
-  const [videoLoaded, setVideoLoaded] = useState(false);
 
   // Initialize and animate stars
   useEffect(() => {
@@ -140,8 +139,6 @@ export default function CrystalGlobe() {
                 loop
                 playsInline
                 muted
-                onCanPlay={() => setVideoLoaded(true)}
-                className={videoLoaded ? styles.loaded : ""}
               />
             </div>
             <canvas
