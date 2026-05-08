@@ -19,7 +19,6 @@ export default function CrystalGlobe() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mouseRef = useRef({ x: 50, y: 50 });
-  const shakeRef = useRef({ x: 0, y: 0 });
   const [videoLoaded, setVideoLoaded] = useState(false);
 
   // Initialize and animate stars
@@ -117,11 +116,7 @@ export default function CrystalGlobe() {
 
     const handleShake = () => {
       const intensity = 0.3;
-      shakeRef.current = {
-        x: (Math.random() - 0.5) * intensity,
-        y: (Math.random() - 0.5) * intensity,
-      };
-      viewport.style.transform = `translate3d(${shakeRef.current.x}px, ${shakeRef.current.y}px, 0)`;
+      viewport.style.transform = `translate3d(${(Math.random() - 0.5) * intensity}px, ${(Math.random() - 0.5) * intensity}px, 0)`;
     };
 
     const shakeInterval = setInterval(handleShake, 100);
