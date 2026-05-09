@@ -392,41 +392,35 @@ export default function BackgroundEffect() {
       uniform vec2 uResolution;
       uniform float uTime;
 
-      #define PI 3.141592654
-      #define TAU 6.283185307
+      #define PI 3.14159265359
+      #define TAU 6.28318530718
 
-      float hash(vec2 p) {
-        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-      }
+      float hash(float n) { return fract(sin(n) * 43758.5453123); }
+      float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
       float noise(vec2 p) {
         vec2 i = floor(p);
         vec2 f = fract(p);
         f = f * f * (3.0 - 2.0 * f);
-        return mix(
-          mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
-          mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x),
-          f.y
-        );
+        float n = i.x + i.y * 57.0;
+        return mix(mix(hash(n), hash(n + 1.0), f.x),
+                   mix(hash(n + 57.0), hash(n + 58.0), f.x), f.y);
       }
 
       float fbm(vec2 p) {
-        float f = 0.0;
-        f += 0.5 * noise(p); p *= 2.02;
-        f += 0.25 * noise(p); p *= 2.03;
-        f += 0.125 * noise(p); p *= 2.01;
-        f += 0.0625 * noise(p);
-        return f / 0.9375;
+        float v = 0.0;
+        float a = 0.5;
+        for (int i = 0; i < 4; i++) {
+          v += a * noise(p);
+          p *= 2.03;
+          a *= 0.5;
+        }
+        return v;
       }
 
       mat3 rotX(float a) {
         float s = sin(a), c = cos(a);
         return mat3(1.0, 0.0, 0.0, 0.0, c, -s, 0.0, s, c);
-      }
-
-      mat3 rotY(float a) {
-        float s = sin(a), c = cos(a);
-        return mat3(c, 0.0, s, 0.0, 1.0, 0.0, -s, 0.0, c);
       }
 
       float iSphere(vec3 ro, vec3 rd, float r) {
@@ -437,13 +431,9 @@ export default function BackgroundEffect() {
         return -b - sqrt(h);
       }
 
-      vec3 sphereNormal(vec3 p) {
-        return normalize(p);
-      }
-
-      float iRing(vec3 ro, vec3 rd, vec3 n, float inner, float outer) {
+      float iRingPlane(vec3 ro, vec3 rd, vec3 n, float inner, float outer) {
         float denom = dot(rd, n);
-        if (abs(denom) < 0.001) return -1.0;
+        if (abs(denom) < 0.0001) return -1.0;
         float t = -dot(ro, n) / denom;
         if (t < 0.0) return -1.0;
         vec3 p = ro + rd * t;
@@ -452,162 +442,232 @@ export default function BackgroundEffect() {
         return t;
       }
 
+      // Detailed ring structure matching real Saturn
+      float ringDensity(float rNorm) {
+        float d = 1.0;
+
+        // D ring - faint innermost
+        d *= 0.15 + 0.85 * smoothstep(0.00, 0.03, rNorm);
+
+        // C ring - darker
+        d *= 0.3 + 0.7 * smoothstep(0.07, 0.12, rNorm);
+
+        // B ring - very bright and broad
+        float bRing = smoothstep(0.12, 0.20, rNorm) * (1.0 - smoothstep(0.42, 0.48, rNorm));
+        d = mix(d, 1.3, bRing * 0.7);
+
+        // Cassini Division - deep dark gap
+        float cassini = 1.0 - smoothstep(0.465, 0.48, rNorm) * smoothstep(0.52, 0.485, rNorm);
+        d *= 0.05 + 0.95 * cassini;
+
+        // A ring - bright outer
+        float aRing = smoothstep(0.52, 0.58, rNorm) * (1.0 - smoothstep(0.88, 0.95, rNorm));
+        d = mix(d, 1.1, aRing * 0.6);
+
+        // Encke Gap in A ring
+        float encke = 1.0 - smoothstep(0.76, 0.78, rNorm) * smoothstep(0.84, 0.82, rNorm);
+        d *= 0.15 + 0.85 * encke;
+
+        // F ring - narrow bright outer edge
+        float fRing = smoothstep(0.93, 0.95, rNorm) * (1.0 - smoothstep(0.97, 0.99, rNorm));
+        d = mix(d, 0.8, fRing * 0.6);
+
+        return d;
+      }
+
       void main() {
         vec2 uv = gl_FragCoord.xy / uResolution.xy;
         float aspect = uResolution.x / uResolution.y;
         vec2 p = (uv * 2.0 - 1.0) * vec2(aspect, 1.0);
 
-        // Camera
-        vec3 ro = vec3(0.0, 1.0, -3.5);
-        vec3 rd = normalize(vec3(p * 0.8, 1.0));
+        // Camera - closer and lower for dramatic ring view
+        vec3 ro = vec3(0.0, -0.5, -3.2);
+        vec3 rd = normalize(vec3(p * 0.65, 1.0));
 
-        // Light from upper-left
-        vec3 sunDir = normalize(vec3(-0.6, 0.8, 0.5));
-        vec3 sunCol = vec3(1.0, 0.9, 0.75);
+        // Sun from lower left - sunrise through rings
+        vec3 sunDir = normalize(vec3(-0.7, -0.15, 0.7));
+        vec3 sunCol = vec3(1.0, 0.9, 0.72);
 
         vec3 col = vec3(0.0);
 
         // Planet
-        vec3 planetPos = vec3(0.0, -0.1, 0.0);
+        vec3 planetPos = vec3(0.0, 0.0, 0.0);
         float planetRadius = 0.55;
         vec3 localRo = ro - planetPos;
 
-        float tPlanet = iSphere(localRo, rd, planetRadius);
-
-        // Rings - tilted at ~20 degrees
-        mat3 ringRot = rotX(0.35);
+        // Rings - tilted ~27 degrees
+        float ringTilt = 0.48;
+        mat3 ringRot = rotX(ringTilt);
         vec3 ringNormal = ringRot * vec3(0.0, 1.0, 0.0);
-        float ringInner = 0.85;
-        float ringOuter = 1.5;
-        float tRing = iRing(localRo, rd, ringNormal, ringInner, ringOuter);
+        float ringInner = 0.72;
+        float ringOuter = 1.55;
 
-        // Planet shadow on rings
-        float ringShadow = 1.0;
-        if (tRing > 0.0) {
-          vec3 ringHit = localRo + rd * tRing;
-          // Check if planet blocks light to this ring point
-          vec3 toSun = sunDir;
-          float tShadow = iSphere(ringHit - planetPos, toSun, planetRadius);
-          if (tShadow > 0.0) ringShadow = 0.4;
-        }
+        float tPlanet = iSphere(localRo, rd, planetRadius);
+        float tRing = iRingPlane(localRo, rd, ringNormal, ringInner, ringOuter);
 
-        // Ring shadow on planet
-        float planetShadow = 1.0;
-        if (tPlanet > 0.0) {
-          vec3 planetHit = localRo + rd * tPlanet;
-          vec3 toSun = sunDir;
-          // Where would this point on planet be in shadow from rings?
-          vec3 ringCenter = vec3(0.0);
-          float ringRadius = length(ringCenter - planetHit);
-          if (ringRadius > ringInner * planetRadius && ringRadius < ringOuter * planetRadius) {
-            // Approximate ring shadow
-            float ringAngle = atan(planetHit.z - ringCenter.z, planetHit.x - ringCenter.x);
-            float shadowAngle = ringAngle + 0.3; // Offset for light angle
-            vec3 shadowDir = vec3(cos(shadowAngle), 0.0, sin(shadowAngle));
-            float alignment = max(dot(normalize(planetHit - ringCenter), shadowDir), 0.0);
-            planetShadow = mix(1.0, 0.7, alignment * smoothstep(ringInner, ringInner + 0.2, ringRadius));
-          }
-        }
+        // Background - deep dark space
+        vec3 bgCol = vec3(0.003, 0.004, 0.008);
+        float starField = pow(noise(uv * 350.0), 22.0) * 1.5;
+        starField += pow(noise(uv * 550.0 + vec2(80.0)), 28.0) * 1.0;
+        starField += pow(noise(uv * 180.0 + vec2(40.0)), 12.0) * 0.4;
+        bgCol += vec3(0.85, 0.9, 1.0) * starField;
+        col = bgCol;
 
-        // Render planet surface
-        if (tPlanet > 0.0 && (tRing < 0.0 || tPlanet < tRing)) {
-          vec3 pos = localRo + rd * tPlanet;
-          vec3 norm = sphereNormal(pos);
+        // Sun glow in lower left
+        vec2 sunScreen = vec2(-0.65, -0.12);
+        float sunDist = length(p - sunScreen);
+        float sunGlow = exp(-sunDist * sunDist * 2.5) * 0.5;
+        col += sunCol * sunGlow;
 
-          // Latitude for bands
-          float lat = asin(norm.y);
-          float lon = atan(norm.z, norm.x);
+        // Radial sun rays
+        float sunAngle = atan(p.y - sunScreen.y, p.x - sunScreen.x);
+        float rays = pow(max(cos(sunAngle * 8.0), 0.0), 30.0);
+        rays += pow(max(cos(sunAngle * 5.0), 0.0), 25.0) * 0.5;
+        col += sunCol * rays * exp(-sunDist * 1.5) * 0.2;
 
-          // Cloud bands
-          float bands = 0.0;
-          bands += sin(lat * 20.0 + 0.5) * 0.4;
-          bands += sin(lat * 8.0 - 0.3) * 0.3;
-          bands += sin(lat * 35.0 + lon * 2.0) * 0.2;
-
-          // Base colors - warm tan/beige
-          vec3 base1 = vec3(0.88, 0.78, 0.62);
-          vec3 base2 = vec3(0.75, 0.65, 0.52);
-          vec3 base3 = vec3(0.92, 0.85, 0.72);
-          vec3 base4 = vec3(0.82, 0.72, 0.58);
-
-          float b1 = sin(lat * 15.0 + 0.0) * 0.5 + 0.5;
-          float b2 = sin(lat * 7.0 + 1.5) * 0.5 + 0.5;
-          vec3 surfCol = mix(base1, base2, b1);
-          surfCol = mix(surfCol, base3, b2 * 0.5);
-          surfCol += bands * 0.08;
-
-          // Polar hazes
-          float polar = smoothstep(0.55, 0.85, abs(norm.y));
-          surfCol = mix(surfCol, vec3(0.95, 0.9, 0.82), polar * 0.4);
-
-          // Lighting
-          float diff = max(dot(norm, sunDir), 0.0);
-          float ambient = 0.12;
-
-          // Limb darkening
-          float viewDot = max(dot(norm, -rd), 0.0);
-          float limb = pow(viewDot, 0.8);
-
-          // Specular
-          vec3 halfVec = normalize(sunDir - rd);
-          float spec = pow(max(dot(norm, halfVec), 0.0), 48.0) * 0.4;
-
-          // Ring shadow on planet
-          surfCol *= mix(1.0, planetShadow, 0.5);
-
-          col = surfCol * (ambient + diff * 0.88) * limb;
-          col += sunCol * spec;
-        }
-
-        // Render rings (only if in front of planet or no planet hit)
+        // Render rings behind planet
         if (tRing > 0.0 && (tPlanet < 0.0 || tRing < tPlanet)) {
           vec3 pos = localRo + rd * tRing;
           float r = length(pos);
           float angle = atan(pos.z, pos.x);
-
-          // Ring structure
           float rNorm = (r - ringInner) / (ringOuter - ringInner);
 
-          // Multiple ring bands
-          float ringBands = 0.0;
-          ringBands += sin(rNorm * 120.0) * 0.3 + 0.7;
-          ringBands *= sin(rNorm * 60.0 + 1.5) * 0.2 + 0.8;
-          ringBands *= sin(rNorm * 30.0 - 2.0) * 0.15 + 0.85;
+          float dens = ringDensity(rNorm);
 
-          // Cassini division
-          float cassini = smoothstep(0.0, 0.03, abs(rNorm - 0.48));
-          ringBands *= cassini;
+          // Rich ringlet texture
+          float ringlets = 0.5 + 0.5 * sin(rNorm * 400.0);
+          ringlets *= 0.6 + 0.4 * sin(rNorm * 200.0 + 2.0);
+          ringlets *= 0.7 + 0.3 * sin(rNorm * 800.0 + angle * 3.0);
+          ringlets *= 0.8 + 0.2 * sin(rNorm * 50.0 - 1.0);
 
-          // Noise texture
-          float tex = fbm(vec2(angle * 20.0, rNorm * 50.0 + uTime * 0.2)) * 0.3 + 0.7;
+          // Fine grain noise
+          float tex = fbm(vec2(angle * 20.0, rNorm * 100.0)) * 0.35 + 0.65;
 
-          // Color gradient
-          vec3 innerCol = vec3(0.98, 0.92, 0.78);
-          vec3 midCol = vec3(0.92, 0.85, 0.7);
-          vec3 outerCol = vec3(0.78, 0.7, 0.58);
-          vec3 ringCol = rNorm < 0.5 ? mix(innerCol, midCol, rNorm * 2.0)
-                                     : mix(midCol, outerCol, (rNorm - 0.5) * 2.0);
+          // Ring colors - warm ivory to sandy brown
+          vec3 ringColA = vec3(0.95, 0.88, 0.75);
+          vec3 ringColB = vec3(0.88, 0.80, 0.65);
+          vec3 ringColC = vec3(0.78, 0.70, 0.55);
+          vec3 ringColD = vec3(0.68, 0.60, 0.48);
+          vec3 ringCol;
+          if (rNorm < 0.33) {
+            ringCol = mix(ringColA, ringColB, rNorm * 3.0);
+          } else if (rNorm < 0.66) {
+            ringCol = mix(ringColB, ringColC, (rNorm - 0.33) * 3.0);
+          } else {
+            ringCol = mix(ringColC, ringColD, (rNorm - 0.66) * 3.0);
+          }
 
-          // Ring normal for shading (slight curve)
-          vec3 ringNorm = normalize(cross(vec3(-pos.z, 0.0, pos.x), vec3(0.0, 1.0, 0.0)));
-          float ringShade = max(dot(ringNorm, sunDir), 0.0);
-          ringShade = 0.4 + 0.6 * ringShade;
+          // Ring lighting
+          vec3 ringTangent = normalize(vec3(-pos.z, 0.0, pos.x));
+          vec3 ringUp = cross(ringTangent, normalize(pos));
+          float lit = 0.25 + 0.75 * max(dot(ringUp, sunDir), 0.0);
 
-          // Inner edge glow
-          float innerGlow = exp(-(rNorm) * 30.0) * 0.3;
+          // Planet shadow on rings
+          vec3 toSun = sunDir;
+          float shadowT = iSphere(pos - planetPos, toSun, planetRadius);
+          float inShadow = (shadowT > 0.0) ? 1.0 : 0.0;
+          if (shadowT > 0.0) {
+            vec3 shadowPoint = pos + toSun * shadowT;
+            float distFromCenter = length(shadowPoint) / planetRadius;
+            inShadow *= 1.0 - smoothstep(0.92, 1.08, distFromCenter);
+          }
 
-          col = ringCol * ringBands * tex * ringShade * ringShadow;
-          col += sunCol * innerGlow * 0.5;
+          float brightness = dens * ringlets * tex * lit * (1.0 - inShadow * 0.9);
+
+          float alpha = smoothstep(ringInner, ringInner + 0.015, r)
+                      * smoothstep(ringOuter, ringOuter - 0.025, r);
+          alpha *= dens;
+
+          vec3 ringFinal = ringCol * brightness * 1.3;
+
+          // Strong backlit glow when sun shines through rings
+          float backlit = max(dot(-ringUp, sunDir), 0.0);
+          ringFinal += sunCol * backlit * 0.25 * alpha * (1.0 - inShadow);
+
+          col = mix(col, ringFinal, alpha * 0.9);
         }
 
-        // Background - dark space with subtle stars
-        col += vec3(0.02, 0.02, 0.04) * (0.5 + 0.5 * noise(p * 50.0));
+        // Render planet
+        if (tPlanet > 0.0) {
+          vec3 pos = localRo + rd * tPlanet;
+          vec3 norm = normalize(pos);
 
-        // Subtle atmospheric glow around planet
-        float atmoGlow = pow(1.0 - abs(p.y), 8.0) * 0.08;
-        col += sunCol * atmoGlow;
+          float lat = asin(clamp(norm.y, -1.0, 1.0));
+          float lon = atan(norm.z, norm.x);
 
-        // Tone mapping
+          // Rich atmospheric bands with noise
+          float bandNoise = fbm(vec2(lon * 4.0, lat * 25.0)) * 0.12;
+
+          float band1 = sin(lat * 22.0 + bandNoise) * 0.5 + 0.5;
+          float band2 = sin(lat * 11.0 + 1.0 + bandNoise * 1.5) * 0.5 + 0.5;
+          float band3 = sin(lat * 38.0 + lon * 2.5) * 0.5 + 0.5;
+          float band4 = sin(lat * 6.0 - 0.3) * 0.5 + 0.5;
+          float band5 = sin(lat * 15.0 + 2.5) * 0.5 + 0.5;
+
+          // Saturn palette - vivid gold/tan
+          vec3 colEq = vec3(0.92, 0.82, 0.58);   // equatorial bright
+          vec3 colMid = vec3(0.82, 0.72, 0.52);  // mid latitude
+          vec3 colBand = vec3(0.70, 0.60, 0.45); // dark bands
+          vec3 colPol = vec3(0.96, 0.92, 0.82);  // polar
+
+          vec3 surfCol = mix(colEq, colMid, band1);
+          surfCol = mix(surfCol, colBand, band2 * 0.45);
+          surfCol = mix(surfCol, colEq, band3 * 0.12);
+          surfCol = mix(surfCol, colPol, band4 * 0.25);
+          surfCol = mix(surfCol, colMid, band5 * 0.2);
+
+          // Polar hoods
+          float polar = smoothstep(0.55, 0.82, abs(norm.y));
+          surfCol = mix(surfCol, colPol, polar * 0.55);
+
+          // Subtle hexagonal pattern at north pole
+          float hexLat = abs(lat - 0.78);
+          float hexagon = smoothstep(0.18, 0.08, hexLat);
+          surfCol += vec3(0.06, 0.04, 0.02) * hexagon * (0.5 + 0.5 * sin(lon * 6.0 + 0.5));
+
+          // Lighting
+          float diff = max(dot(norm, sunDir), 0.0);
+          float ambient = 0.06;
+
+          // Limb darkening
+          float viewDot = max(dot(norm, -rd), 0.0);
+          float limb = pow(viewDot, 0.55);
+
+          // Ring shadow on planet
+          float ringShadow = 1.0;
+          vec3 equatorPlane = ringRot * vec3(0.0, 1.0, 0.0);
+          float distToRingPlane = abs(dot(pos, equatorPlane));
+          float ringRadialDist = length(pos - equatorPlane * dot(pos, equatorPlane));
+          if (ringRadialDist > ringInner && ringRadialDist < ringOuter && distToRingPlane < 0.04) {
+            float tShadowRing = iRingPlane(pos, sunDir, ringNormal, ringInner, ringOuter);
+            if (tShadowRing > 0.0) ringShadow = 0.35;
+          }
+
+          // Specular
+          vec3 halfVec = normalize(sunDir - rd);
+          float spec = pow(max(dot(norm, halfVec), 0.0), 80.0) * 0.35;
+
+          surfCol *= ringShadow;
+
+          col = surfCol * (ambient + diff * 0.95) * (0.45 + 0.55 * limb);
+          col += sunCol * spec;
+
+          // Strong atmospheric glow at limb
+          float atmoLimb = pow(1.0 - viewDot, 2.5);
+          vec3 atmoCol = vec3(0.9, 0.78, 0.55) * atmoLimb * 0.35;
+          float backScatter = pow(max(dot(-norm, sunDir), 0.0), 2.0);
+          atmoCol += vec3(1.0, 0.92, 0.75) * backScatter * atmoLimb * 0.5;
+          col += atmoCol;
+        }
+
+        // Atmospheric glow around planet when no planet hit
+        if (tPlanet < 0.0) {
+          float distToPlanet = length(p) - planetRadius * 0.75;
+          float glow = exp(-distToPlanet * distToPlanet * 6.0) * 0.18;
+          col += vec3(0.85, 0.75, 0.52) * glow;
+        }
+
+        // Tone mapping with slight contrast boost
         col = pow(col, vec3(0.4545));
         col = clamp(col, 0.0, 1.0);
 
