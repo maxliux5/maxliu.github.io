@@ -225,127 +225,55 @@ export default function BackgroundEffect() {
       uniform vec2 uResolution;
       uniform float uTime;
 
-      #define NUM_STEPS 32
-      #define PI 3.141592
-      #define EPSILON 1e-3
-      #define ITER_GEOMETRY 3
-      #define ITER_FRAGMENT 5
-      #define SEA_HEIGHT 0.6
-      #define SEA_CHOPPY 4.0
-      #define SEA_SPEED 0.8
-      #define SEA_FREQ 0.16
-      #define SEA_BASE vec3(0.0,0.09,0.18)
-      #define SEA_WATER_COLOR vec3(0.8,0.9,0.6)*0.6
-      #define SEA_TIME (1.0 + uTime * SEA_SPEED)
-      #define octave_m mat2(1.6,1.2,-1.2,1.6)
-
-      mat3 fromEuler(vec3 ang) {
-        vec2 a1 = vec2(sin(ang.x),cos(ang.x));
-        vec2 a2 = vec2(sin(ang.y),cos(ang.y));
-        vec2 a3 = vec2(sin(ang.z),cos(ang.z));
-        mat3 m;
-        m[0] = vec3(a1.y*a3.y+a1.x*a2.x*a3.x,a1.y*a2.x*a3.x+a3.y*a1.x,-a2.y*a3.x);
-        m[1] = vec3(-a2.y*a1.x,a1.y*a2.y,a2.x);
-        m[2] = vec3(a3.y*a1.x*a2.x+a1.y*a3.x,a1.x*a3.x-a1.y*a3.y*a2.x,a2.y*a3.y);
-        return m;
-      }
-      float hash(vec2 p) {
-        float h = dot(p,vec2(127.1,311.7));
-        return fract(sin(h)*43758.5453123);
-      }
-      float noise(in vec2 p) {
-        vec2 i = floor(p);
-        vec2 f = fract(p);
-        vec2 u = f*f*(3.0-2.0*f);
-        return -1.0+2.0*mix(mix(hash(i+vec2(0.0,0.0)),hash(i+vec2(1.0,0.0)),u.x),mix(hash(i+vec2(0.0,1.0)),hash(i+vec2(1.0,1.0)),u.x),u.y);
-      }
-      float sea_octave(vec2 uv,float choppy) {
-        uv += noise(uv);
-        vec2 wv = 1.0-abs(sin(uv));
-        vec2 swv = abs(cos(uv));
-        wv = mix(wv,swv,wv);
-        return pow(1.0-pow(wv.x*wv.y,0.65),choppy);
-      }
-      float map(vec3 p) {
-        float freq = SEA_FREQ;
-        float amp = SEA_HEIGHT;
-        float choppy = SEA_CHOPPY;
-        vec2 uv = p.xz; uv.x *= 0.75;
-        float d, h = 0.0;
-        for(int i = 0; i < ITER_GEOMETRY; i++) {
-          d = sea_octave((uv+SEA_TIME)*freq,choppy);
-          d += sea_octave((uv-SEA_TIME)*freq,choppy);
-          h += d * amp;
-          uv *= octave_m; freq *= 1.9; amp *= 0.22;
-          choppy = mix(choppy,1.0,0.2);
-        }
-        return p.y - h;
-      }
-      float map_detailed(vec3 p) {
-        float freq = SEA_FREQ;
-        float amp = SEA_HEIGHT;
-        float choppy = SEA_CHOPPY;
-        vec2 uv = p.xz; uv.x *= 0.75;
-        float d, h = 0.0;
-        for(int i = 0; i < ITER_FRAGMENT; i++) {
-          d = sea_octave((uv+SEA_TIME)*freq,choppy);
-          d += sea_octave((uv-SEA_TIME)*freq,choppy);
-          h += d * amp;
-          uv *= octave_m; freq *= 1.9; amp *= 0.22;
-          choppy = mix(choppy,1.0,0.2);
-        }
-        return p.y - h;
-      }
-      vec3 getSeaColor(vec3 p,vec3 n,vec3 l,vec3 eye,vec3 dist) {
-        float fresnel = clamp(1.0-dot(n,-eye),0.0,1.0);
-        fresnel = min(fresnel*fresnel*fresnel,0.5);
-        vec3 reflected = vec3(0.5,0.6,0.7);
-        vec3 refracted = SEA_BASE + vec3(0.1,0.15,0.1);
-        vec3 color = mix(refracted,reflected,fresnel);
-        return color;
-      }
       void main() {
         vec2 uv = gl_FragCoord.xy / uResolution.xy;
-        uv = uv * 2.0 - 1.0;
-        uv.x *= uResolution.x / uResolution.y;
-        float time = uTime * 0.3;
-        vec3 dir = normalize(vec3(uv.xy, -1.0));
-        float seaHeight = map(vec3(uv.x, 0.0, uv.y + time * 5.0));
-        float sky = 1.0 - smoothstep(0.0, 0.5, dir.y);
-        vec3 color = mix(vec3(0.02, 0.05, 0.1), vec3(0.1, 0.2, 0.4), sky);
-        color = mix(color, SEA_BASE + SEA_WATER_COLOR * 0.5, smoothstep(0.0, -0.5, seaHeight));
-        fragColor = vec4(color, 1.0);
+        float y = uv.y;
+        float time = uTime * 0.5;
+
+        vec3 sky = mix(vec3(0.02, 0.05, 0.15), vec3(0.1, 0.2, 0.5), y);
+        vec3 sea = mix(vec3(0.0, 0.05, 0.1), vec3(0.1, 0.3, 0.4), y);
+
+        float wave1 = sin(uv.x * 8.0 + time) * 0.05;
+        float wave2 = sin(uv.x * 12.0 - time * 1.5) * 0.03;
+        float waveOffset = wave1 + wave2;
+
+        float horizon = 0.5 + waveOffset;
+        vec3 color = mix(sea, sky, smoothstep(horizon - 0.05, horizon + 0.05, y));
+
+        float foam = smoothstep(0.48, 0.52, y + waveOffset * 0.5) * (1.0 - smoothstep(0.52, 0.58, y));
+        color = mix(color, vec3(0.7, 0.8, 0.9), foam * 0.3);
+
+        gl_FragColor = vec4(color, 1.0);
       }
     `;
 
     let program: WebGLProgram | null = null;
     let start = performance.now();
     let rainIntensity = 1.08;
-    let currentEffect: EffectType | null = null;
 
     function compileShader(glContext: WebGLRenderingContext, type: number, source: string) {
       const shader = glContext.createShader(type);
       if (!shader) return null;
       glContext.shaderSource(shader, source);
       glContext.compileShader(shader);
-      if (!glContext.getShaderParameter(shader, glContext.COMPILE_STATUS)) return null;
+      if (!glContext.getShaderParameter(shader, glContext.COMPILE_STATUS)) {
+        console.error("Shader compile error:", glContext.getShaderInfoLog(shader));
+        return null;
+      }
       return shader;
     }
 
     function createProgram(glContext: WebGLRenderingContext, fragmentSource: string) {
       const vertex = compileShader(glContext, glContext.VERTEX_SHADER, vertexSource);
       const fragment = compileShader(glContext, glContext.FRAGMENT_SHADER, fragmentSource);
-      if (!vertex || !fragment) {
-        console.error("Shader compilation failed. Vertex:", vertex, "Fragment:", fragment);
-        return null;
-      }
+      if (!vertex || !fragment) return null;
       const prog = glContext.createProgram();
       if (!prog) return null;
       glContext.attachShader(prog, vertex);
       glContext.attachShader(prog, fragment);
       glContext.linkProgram(prog);
       if (!glContext.getProgramParameter(prog, glContext.LINK_STATUS)) {
-        console.error("Program linking failed:", glContext.getProgramInfoLog(prog));
+        console.error("Program link error:", glContext.getProgramInfoLog(prog));
         return null;
       }
       glContext.useProgram(prog);
@@ -367,31 +295,28 @@ export default function BackgroundEffect() {
       gl.viewport(0, 0, canvas.width, canvas.height);
     }
 
+    function getFragmentSource(): string {
+      switch (effect) {
+        case "rain": return rainSceneFragmentSource;
+        case "stars": return starNestFragmentSource;
+        case "seascape": return seascapeFragmentSource;
+      }
+    }
+
     function render(now: number) {
       if (!gl) return;
 
-      if (currentEffect !== effect) {
-        if (program) gl.deleteProgram(program);
+      if (program) {
+        gl.deleteProgram(program);
         program = null;
-        currentEffect = effect;
       }
 
-      let fragmentSource: string;
-      if (effect === "rain") {
-        fragmentSource = rainSceneFragmentSource;
-      } else if (effect === "stars") {
-        fragmentSource = starNestFragmentSource;
-      } else {
-        fragmentSource = seascapeFragmentSource;
-      }
+      const fragmentSource = getFragmentSource();
+      program = createProgram(gl, fragmentSource);
 
       if (!program) {
-        program = createProgram(gl, fragmentSource);
-        if (!program) {
-          console.error("Shader compilation failed for:", effect);
-          requestAnimationFrame(render);
-          return;
-        }
+        requestAnimationFrame(render);
+        return;
       }
 
       resize();
