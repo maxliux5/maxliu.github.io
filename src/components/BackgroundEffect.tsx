@@ -225,123 +225,171 @@ export default function BackgroundEffect() {
       uniform vec2 uResolution;
       uniform float uTime;
 
-      #define NUM_STEPS 8
-      #define PI 3.141592
-      #define FAR 100.0
+      #define PI 3.141592654
+      #define TAU 6.283185307
 
-      mat2 octave_m = mat2(1.6, 1.2, -1.2, 1.6);
+      // Particle-based liquid effect
+      const int N_DROPS = 30;
 
-      float hash(vec2 p) {
-        p = fract(p * vec2(5.3983, 5.4427));
-        p += dot(p.yx, p.xy + vec2(21.5351, 14.3137));
-        return fract(p.x * p.y * 95.4337);
+      float hash(float n) { return fract(sin(n) * 43758.5453); }
+      float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+      vec2 hash22(vec2 p) {
+        p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+        return fract(sin(p) * 43758.5453);
       }
 
       float noise(vec2 p) {
         vec2 i = floor(p);
         vec2 f = fract(p);
         f = f * f * (3.0 - 2.0 * f);
-        return mix(
-          mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
-          mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x),
-          f.y
-        );
+        float a = dot(hash22(i), f);
+        float b = dot(hash22(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));
+        float c = dot(hash22(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0));
+        float d = dot(hash22(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
       }
 
-      float octave(vec2 uv) {
-        vec2 p = uv;
+      float fbm(vec2 p) {
         float f = 0.0;
-        f += 0.5000 * noise(p); p = octave_m * p;
-        f += 0.2500 * noise(p); p = octave_m * p;
-        f += 0.1250 * noise(p); p = octave_m * p;
+        f += 0.5000 * noise(p); p *= 2.02;
+        f += 0.2500 * noise(p); p *= 2.03;
+        f += 0.1250 * noise(p); p *= 2.01;
         f += 0.0625 * noise(p);
         return f / 0.9375;
       }
 
-      float diffuse(vec3 n, vec3 l, float p) {
-        return pow(dot(n, l) * 0.4 + 0.6, p);
+      // Smooth minimum for metaball blending
+      float smin(float a, float b, float k) {
+        float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+        return mix(b, a, h) - k * h * (1.0 - h);
       }
 
-      float specular(vec3 n, vec3 l, vec3 e, float s) {
-        float nrm = (s + 8.0) / (PI * 8.0);
-        return pow(max(dot(reflect(e, n), l), 0.0), s) * nrm;
+      // Distance to a liquid drop
+      float drop(vec2 uv, vec2 center, float radius, float time, float id) {
+        // Animate drop position
+        float angle = hash(id * 127.1) * TAU;
+        float speed = 0.3 + hash(id * 311.7) * 0.4;
+        float pathRadius = 0.15 + hash(id * 53.3) * 0.2;
+
+        vec2 offset = vec2(
+          cos(angle + time * speed) * pathRadius,
+          sin(angle * 1.3 + time * speed * 0.7) * pathRadius * 0.5
+        );
+        offset += vec2(sin(time * 0.8 + id), cos(time * 0.6 + id * 2.0)) * 0.05;
+
+        vec2 pos = center + offset;
+        float d = length(uv - pos);
+
+        // Add some noise deformation
+        float noiseVal = fbm((uv - pos) * 10.0 + time * 0.5 + id);
+        d += noiseVal * 0.02;
+
+        return d - radius;
       }
 
-      float sea(vec2 uv, float time) {
-        float freq = 0.16;
-        float amp = 0.6;
-        float h = 0.0;
-        for (int i = 0; i < NUM_STEPS; i++) {
-          float t = time * 0.3;
-          h += (sin(uv.x * freq + t) + sin(uv.y * freq + t * 0.8)) * amp;
-          freq *= 1.9;
-          amp *= 0.22;
-          uv *= octave_m;
+      // Liquid field - combines multiple drops with smooth blending
+      float liquidField(vec2 uv, float time) {
+        float field = 100.0;
+
+        for (int i = 0; i < N_DROPS; i++) {
+          float fi = float(i);
+          float dropSize = 0.03 + hash(fi * 17.3) * 0.04;
+
+          // Grid-based distribution with jitter
+          vec2 gridPos = vec2(
+            mod(fi * 1.37, 5.0) / 5.0 - 0.5,
+            mod(fi * 2.47, 4.0) / 4.0 - 0.5
+          ) * 1.2;
+
+          float d = drop(uv, gridPos, dropSize, time, fi);
+          field = smin(field, d, 0.08);
         }
-        return h;
+
+        return field;
       }
 
-      vec3 getSkyColor(vec3 e) {
-        e.y = max(e.y, 0.0);
-        return vec3(0.7, 0.8, 0.9) - e.y * 0.5;
-      }
+      // Flowing liquid texture
+      vec3 liquidColor(vec2 uv, float time) {
+        float field = liquidField(uv, time);
 
-      vec3 getSeaColor(vec3 p, vec3 n, vec3 l, vec3 eye, float dist) {
-        float fresnel = clamp(1.0 - dot(n, -eye), 0.0, 1.0);
-        fresnel = pow(fresnel, 3.0) * 0.5;
-        vec3 refracted = getSkyColor(reflect(eye, n));
-        vec3 seaCol = vec3(0.0, 0.06, 0.12) + diffuse(n, l, 40.0) * vec3(0.04, 0.12, 0.2);
-        seaCol += specular(n, l, eye, 60.0) * vec3(0.6, 0.7, 0.8);
-        seaCol = mix(seaCol, refracted, fresnel);
-        float atten = max(1.0 - dist * 0.001, 0.0);
-        seaCol += vec3(0.1, 0.15, 0.2) * (p.y - 0.0) * 0.3 * atten;
-        return seaCol;
-      }
+        // Surface detection
+        float surface = smoothstep(0.0, 0.02, -field);
 
-      vec3 getNormal(vec3 p, float dist) {
-        float eps = 0.1;
-        vec3 n;
-        n.y = sea(p.xz, uTime);
-        n.x = sea(p.xz + vec2(eps, 0.0), uTime) - n.y;
-        n.z = sea(p.xz + vec2(0.0, eps), uTime) - n.y;
-        n.y = eps;
-        return normalize(n);
+        // Calculate approximate normal from field gradient
+        float eps = 0.005;
+        float fx = liquidField(uv + vec2(eps, 0.0), time);
+        float fy = liquidField(uv + vec2(0.0, eps), time);
+        vec2 grad = vec2(field - fx, field - fy);
+        vec3 normal = normalize(vec3(grad * 10.0, 1.0));
+
+        // Light direction
+        vec3 lightDir = normalize(vec3(0.6, 0.8, 0.5));
+        vec3 lightCol = vec3(1.0, 0.95, 0.9);
+
+        // Base liquid color - deep teal/cyan
+        vec3 baseCol = vec3(0.02, 0.08, 0.15);
+        vec3 highlightCol = vec3(0.4, 0.7, 0.85);
+        vec3 deepCol = vec3(0.01, 0.03, 0.08);
+
+        // Diffuse lighting
+        float diff = max(dot(normal, lightDir), 0.0);
+
+        // Specular highlights
+        vec3 viewDir = vec3(0.0, 0.0, 1.0);
+        vec3 halfVec = normalize(lightDir + viewDir);
+        float spec = pow(max(dot(normal, halfVec), 0.0), 64.0);
+        float spec2 = pow(max(dot(normal, halfVec), 0.0), 16.0);
+
+        // Fresnel for rim/edge glow
+        float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
+
+        // Combine
+        vec3 col = mix(deepCol, baseCol, surface);
+        col = mix(col, highlightCol, diff * surface);
+        col += lightCol * spec * 2.0 * surface;
+        col += lightCol * spec2 * 0.5 * surface;
+        col += vec3(0.3, 0.5, 0.6) * fresnel * surface * 0.5;
+
+        // Subsurface scattering fake
+        float sss = pow(max(dot(viewDir, -lightDir), 0.0), 4.0) * surface;
+        col += vec3(0.1, 0.3, 0.4) * sss * 0.5;
+
+        // Background - dark with subtle texture
+        vec3 bg = vec3(0.02, 0.03, 0.05) + noise(uv * 20.0 + time) * 0.01;
+
+        // Depth fog
+        float depth = smoothstep(-0.1, 0.1, field);
+        col = mix(col, bg, depth * 0.8);
+
+        return col;
       }
 
       void main() {
         vec2 uv = gl_FragCoord.xy / uResolution.xy;
-        uv = uv * 2.0 - 1.0;
-        uv.x *= uResolution.x / uResolution.y;
+        float aspect = uResolution.x / uResolution.y;
+        vec2 p = (uv - 0.5) * 2.0;
+        p.x *= aspect;
 
-        float time = uTime * 0.5;
+        float time = uTime * 0.4;
 
-        vec3 ang = vec3(0.0, 0.15, 0.0);
-        vec3 ori = vec3(0.0, 3.5, 5.0);
-        vec3 dir = normalize(vec3(uv.xy, -1.5));
+        // Get liquid color
+        vec3 col = liquidColor(p, time);
 
-        vec3 p = ori + dir * 3.0;
-        float dist = 0.0;
-        float speed = 0.0;
+        // Add some caustic-like patterns
+        float caustic = fbm(p * 3.0 + time * 0.2) * 0.15;
+        caustic *= smoothstep(0.0, -0.05, liquidField(p, time));
+        col += vec3(0.2, 0.4, 0.5) * caustic;
 
-        for (int i = 0; i < 6; i++) {
-          p.y += sea(p.xz, time) * 0.3;
-          dist += p.y;
-          speed = (p.y - dist) * 0.2;
-        }
+        // Subtle vignette
+        float vig = 1.0 - length(p) * 0.3;
+        col *= vig;
 
-        vec3 seaNormal = getNormal(p, dist);
+        // Tone mapping
+        col = pow(col, vec3(0.4545));
+        col = clamp(col, 0.0, 1.0);
 
-        vec3 lightDir = normalize(vec3(0.0, 1.0, 0.8));
-
-        vec3 color = mix(
-          getSkyColor(dir),
-          getSeaColor(p, seaNormal, lightDir, dir, dist),
-          pow(smoothstep(0.0, -5.0, p.y), 0.3)
-        );
-
-        color += vec3(0.9, 0.95, 1.0) * pow(max(dot(seaNormal, lightDir), 0.0), 256.0) * 0.5;
-
-        gl_FragColor = vec4(color, 1.0);
+        gl_FragColor = vec4(col, 1.0);
       }
     `;
 
