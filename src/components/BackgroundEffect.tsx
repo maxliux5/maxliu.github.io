@@ -287,12 +287,14 @@ export default function BackgroundEffect() {
     }
 
     function resize() {
+      const c = canvas;
+      if (!c || !gl) return;
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
-      canvas.style.width = window.innerWidth + "px";
-      canvas.style.height = window.innerHeight + "px";
-      gl.viewport(0, 0, canvas.width, canvas.height);
+      c.width = window.innerWidth * dpr;
+      c.height = window.innerHeight * dpr;
+      c.style.width = window.innerWidth + "px";
+      c.style.height = window.innerHeight + "px";
+      gl.viewport(0, 0, c.width, c.height);
     }
 
     function getFragmentSource(): string {
