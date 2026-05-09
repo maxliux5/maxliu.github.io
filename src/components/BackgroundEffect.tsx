@@ -306,7 +306,7 @@ export default function BackgroundEffect() {
     }
 
     function render(now: number) {
-      if (!gl) return;
+      if (!gl || !canvas) return;
 
       if (program) {
         gl.deleteProgram(program);
