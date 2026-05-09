@@ -226,168 +226,128 @@ export default function BackgroundEffect() {
       uniform float uTime;
 
       #define PI 3.141592654
-      #define TAU 6.283185307
 
-      // Particle-based liquid effect
-      const int N_DROPS = 30;
-
-      float hash(float n) { return fract(sin(n) * 43758.5453); }
-      float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-
-      vec2 hash22(vec2 p) {
-        p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
-        return fract(sin(p) * 43758.5453);
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
       }
 
       float noise(vec2 p) {
         vec2 i = floor(p);
         vec2 f = fract(p);
         f = f * f * (3.0 - 2.0 * f);
-        float a = dot(hash22(i), f);
-        float b = dot(hash22(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));
-        float c = dot(hash22(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0));
-        float d = dot(hash22(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0));
+        float a = hash(i);
+        float b = hash(i + vec2(1.0, 0.0));
+        float c = hash(i + vec2(0.0, 1.0));
+        float d = hash(i + vec2(1.0, 1.0));
         return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
       }
 
       float fbm(vec2 p) {
         float f = 0.0;
-        f += 0.5000 * noise(p); p *= 2.02;
-        f += 0.2500 * noise(p); p *= 2.03;
-        f += 0.1250 * noise(p); p *= 2.01;
+        f += 0.5 * noise(p); p *= 2.02;
+        f += 0.25 * noise(p); p *= 2.03;
+        f += 0.125 * noise(p); p *= 2.01;
         f += 0.0625 * noise(p);
         return f / 0.9375;
       }
 
-      // Smooth minimum for metaball blending
-      float smin(float a, float b, float k) {
-        float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
-        return mix(b, a, h) - k * h * (1.0 - h);
-      }
-
-      // Distance to a liquid drop
-      float drop(vec2 uv, vec2 center, float radius, float time, float id) {
-        // Animate drop position
-        float angle = hash(id * 127.1) * TAU;
-        float speed = 0.3 + hash(id * 311.7) * 0.4;
-        float pathRadius = 0.15 + hash(id * 53.3) * 0.2;
-
-        vec2 offset = vec2(
-          cos(angle + time * speed) * pathRadius,
-          sin(angle * 1.3 + time * speed * 0.7) * pathRadius * 0.5
-        );
-        offset += vec2(sin(time * 0.8 + id), cos(time * 0.6 + id * 2.0)) * 0.05;
-
-        vec2 pos = center + offset;
-        float d = length(uv - pos);
-
-        // Add some noise deformation
-        float noiseVal = fbm((uv - pos) * 10.0 + time * 0.5 + id);
-        d += noiseVal * 0.02;
-
-        return d - radius;
-      }
-
-      // Liquid field - combines multiple drops with smooth blending
-      float liquidField(vec2 uv, float time) {
-        float field = 100.0;
-
-        for (int i = 0; i < N_DROPS; i++) {
-          float fi = float(i);
-          float dropSize = 0.03 + hash(fi * 17.3) * 0.04;
-
-          // Grid-based distribution with jitter
-          vec2 gridPos = vec2(
-            mod(fi * 1.37, 5.0) / 5.0 - 0.5,
-            mod(fi * 2.47, 4.0) / 4.0 - 0.5
-          ) * 1.2;
-
-          float d = drop(uv, gridPos, dropSize, time, fi);
-          field = smin(field, d, 0.08);
-        }
-
-        return field;
-      }
-
-      // Flowing liquid texture
-      vec3 liquidColor(vec2 uv, float time) {
-        float field = liquidField(uv, time);
-
-        // Surface detection
-        float surface = smoothstep(0.0, 0.02, -field);
-
-        // Calculate approximate normal from field gradient
-        float eps = 0.005;
-        float fx = liquidField(uv + vec2(eps, 0.0), time);
-        float fy = liquidField(uv + vec2(0.0, eps), time);
-        vec2 grad = vec2(field - fx, field - fy);
-        vec3 normal = normalize(vec3(grad * 10.0, 1.0));
-
-        // Light direction
-        vec3 lightDir = normalize(vec3(0.6, 0.8, 0.5));
-        vec3 lightCol = vec3(1.0, 0.95, 0.9);
-
-        // Base liquid color - deep teal/cyan
-        vec3 baseCol = vec3(0.02, 0.08, 0.15);
-        vec3 highlightCol = vec3(0.4, 0.7, 0.85);
-        vec3 deepCol = vec3(0.01, 0.03, 0.08);
-
-        // Diffuse lighting
-        float diff = max(dot(normal, lightDir), 0.0);
-
-        // Specular highlights
-        vec3 viewDir = vec3(0.0, 0.0, 1.0);
-        vec3 halfVec = normalize(lightDir + viewDir);
-        float spec = pow(max(dot(normal, halfVec), 0.0), 64.0);
-        float spec2 = pow(max(dot(normal, halfVec), 0.0), 16.0);
-
-        // Fresnel for rim/edge glow
-        float fresnel = pow(1.0 - max(dot(normal, viewDir), 0.0), 3.0);
-
-        // Combine
-        vec3 col = mix(deepCol, baseCol, surface);
-        col = mix(col, highlightCol, diff * surface);
-        col += lightCol * spec * 2.0 * surface;
-        col += lightCol * spec2 * 0.5 * surface;
-        col += vec3(0.3, 0.5, 0.6) * fresnel * surface * 0.5;
-
-        // Subsurface scattering fake
-        float sss = pow(max(dot(viewDir, -lightDir), 0.0), 4.0) * surface;
-        col += vec3(0.1, 0.3, 0.4) * sss * 0.5;
-
-        // Background - dark with subtle texture
-        vec3 bg = vec3(0.02, 0.03, 0.05) + noise(uv * 20.0 + time) * 0.01;
-
-        // Depth fog
-        float depth = smoothstep(-0.1, 0.1, field);
-        col = mix(col, bg, depth * 0.8);
-
-        return col;
+      float waveHeight(vec2 p, float t) {
+        float h = 0.0;
+        h += sin(p.x * 3.0 + t * 0.7) * 0.15;
+        h += sin(p.x * 5.2 - t * 1.3) * 0.08;
+        h += sin(p.x * 7.8 + t * 0.9) * 0.04;
+        h += sin(p.y * 2.5 + t * 0.5) * 0.06;
+        h += sin(p.x * 12.0 + p.y * 8.0 + t * 1.2) * 0.03;
+        h += fbm(p * 2.0 + vec2(t * 0.2, 0.0)) * 0.2;
+        return h;
       }
 
       void main() {
         vec2 uv = gl_FragCoord.xy / uResolution.xy;
         float aspect = uResolution.x / uResolution.y;
-        vec2 p = (uv - 0.5) * 2.0;
+        vec2 p = uv * 2.0 - 1.0;
         p.x *= aspect;
 
-        float time = uTime * 0.4;
+        float t = uTime * 0.4;
 
-        // Get liquid color
-        vec3 col = liquidColor(p, time);
+        // Sun direction
+        vec3 sunDir = normalize(vec3(0.5, 0.8, 0.3));
+        vec3 sunCol = vec3(1.0, 0.95, 0.8);
 
-        // Add some caustic-like patterns
-        float caustic = fbm(p * 3.0 + time * 0.2) * 0.15;
-        caustic *= smoothstep(0.0, -0.05, liquidField(p, time));
-        col += vec3(0.2, 0.4, 0.5) * caustic;
+        // Sky
+        float skyY = uv.y;
+        vec3 skyTop = vec3(0.02, 0.05, 0.12);
+        vec3 skyBot = vec3(0.2, 0.35, 0.55);
+        vec3 sky = mix(skyBot, skyTop, smoothstep(0.0, 0.5, skyY));
 
-        // Subtle vignette
-        float vig = 1.0 - length(p) * 0.3;
-        col *= vig;
+        // Sun glow in sky
+        vec2 sunPos = vec2(0.3, 0.6);
+        float sunDist = length(uv - sunPos);
+        float sunGlow = exp(-sunDist * sunDist * 8.0);
+        sky += sunCol * sunGlow * 0.3;
 
-        // Tone mapping
-        col = pow(col, vec3(0.4545));
-        col = clamp(col, 0.0, 1.0);
+        // Wave height for horizon
+        float waveH = waveHeight(p, t);
+        float horizon = 0.5 + waveH * 0.3;
+
+        // Distance from horizon
+        float waterDist = horizon - uv.y;
+
+        // Water depth gradient
+        vec3 deepWater = vec3(0.01, 0.03, 0.06);
+        vec3 midWater = vec3(0.03, 0.08, 0.15);
+        vec3 shallowWater = vec3(0.06, 0.15, 0.25);
+
+        vec3 waterCol = mix(shallowWater, midWater, smoothstep(0.0, 0.1, waterDist));
+        waterCol = mix(waterCol, deepWater, smoothstep(0.1, 0.3, waterDist));
+
+        // Wave normals from height differences
+        float eps = 0.01;
+        float h = waveHeight(p, t);
+        float hx = waveHeight(p + vec2(eps, 0.0), t);
+        float hy = waveHeight(p + vec2(0.0, eps), t);
+        vec3 normal = normalize(vec3(h - hx, h - hy, eps));
+
+        // Fresnel - more reflection at shallow angles
+        float fresnel = pow(1.0 - smoothstep(0.3, 0.7, uv.y + waveH * 0.5), 3.0);
+
+        // Reflection of sky on water
+        vec3 reflSky = mix(skyBot, skyTop, smoothstep(0.0, 0.5, 1.0 - uv.y));
+        reflSky += sunCol * exp(-pow(uv.x - sunPos.x, 2.0) * 10.0) * exp(-(1.0 - uv.y) * 3.0) * 0.2;
+
+        // Specular highlights
+        vec3 viewDir = vec3(0.0, 0.0, 1.0);
+        vec3 halfVec = normalize(sunDir + viewDir);
+        float spec = pow(max(dot(normal, halfVec), 0.0), 128.0);
+        float spec2 = pow(max(dot(normal, halfVec), 0.0), 32.0);
+
+        // Combine water
+        waterCol = mix(waterCol, reflSky, fresnel * 0.6);
+        waterCol += sunCol * spec * 0.8;
+        waterCol += sunCol * spec2 * 0.3;
+
+        // Subsurface scattering glow
+        float sss = pow(max(dot(viewDir, -sunDir), 0.0), 4.0) * smoothstep(0.0, 0.2, waterDist);
+        waterCol += vec3(0.05, 0.1, 0.15) * sss;
+
+        // Horizon glow
+        float horizonGlow = exp(-waterDist * waterDist * 200.0) * 0.3;
+        waterCol += skyBot * horizonGlow;
+
+        // Foam on crests
+        float foam = smoothstep(0.48, 0.52, uv.y + waveH * 0.5) * (1.0 - smoothstep(0.52, 0.58, uv.y));
+        waterCol = mix(waterCol, vec3(0.8, 0.85, 0.9), foam * 0.3);
+
+        // Atmospheric haze/mist near horizon
+        float haze = exp(-waterDist * 5.0) * 0.2;
+        waterCol = mix(waterCol, sky, haze);
+
+        // Final composition
+        vec3 col = mix(waterCol, sky, smoothstep(horizon - 0.02, horizon + 0.02, uv.y));
+
+        // Vignette
+        vec2 v = uv - 0.5;
+        col *= 1.0 - dot(v, v) * 0.3;
 
         gl_FragColor = vec4(col, 1.0);
       }
